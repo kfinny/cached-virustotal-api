@@ -1,4 +1,4 @@
-from virus_total_apis import PrivateApi, PublicApi
+from virus_total_apis import IntelApi, PrivateApi, PublicApi
 import logging
 
 from diskcache import Cache
@@ -83,3 +83,10 @@ class CachedPrivateApi(PrivateApi, CachedPublicApi):
                 break
             if count < limit:
                 r = self.file_search(query, offset=r['results']['offset'])
+
+
+class CachedIntelApi(IntelApi, CachedPrivateApi):
+
+    def __init__(self, api_key=None, proxies=None, cache_dir=None):
+        IntelApi.__init__(self, api_key=api_key, proxies=proxies)
+        CachedPrivateApi.__init__(self, api_key=api_key, proxies=proxies, cache_dir=cache_dir)
