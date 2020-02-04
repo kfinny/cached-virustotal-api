@@ -1,8 +1,6 @@
-from virus_total_apis import IntelApi, PrivateApi, PublicApi
 import logging
-
+from virus_total_apis import IntelApi, PrivateApi, PublicApi
 from diskcache import Cache
-
 from .disk import VtCache
 
 
@@ -36,7 +34,7 @@ class CachedPublicApi(PublicApi):
 
     def yield_file_report(self, resource, timeout=None):
         queryset = set()
-        if isinstance(resource, (str, unicode)):
+        if isinstance(resource, str):
             resource = resource.split(',')
         if isinstance(resource, (tuple, list, set, frozenset)):
             for r in resource:
@@ -59,6 +57,7 @@ class CachedPublicApi(PublicApi):
             else:
                 raise Exception("Response Error: VirusTotal returned {} for res := {}".format(
                     response["response_code"], res))
+        logging.info("hits = {}, misses = {}".format(*self.cache.stats()))
 
 
 class CachedPrivateApi(PrivateApi, CachedPublicApi):

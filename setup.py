@@ -1,7 +1,7 @@
 from setuptools import setup, find_packages
 
 setup(name='kfinny.cachedvt',
-      version='1.1.0',
+      version='2.0.0',
       description='An extension of virustotal-api supporting local file cache',
       url='https://github.com/kfinny/cached-virustotal-api',
       author='Kevin Finnigin',
