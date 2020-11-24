@@ -1,91 +1,51 @@
 import logging
-from virus_total_apis import IntelApi, PrivateApi, PublicApi
+from vt import Client, Object
+from vt.error import APIError
 from diskcache import Cache
 from .disk import VtCache
 
 
-class CachedPublicApi(PublicApi):
+class CachedClient(Client):
 
-    def __init__(self, api_key, cache_dir, proxies=None):
-        PublicApi.__init__(self, api_key=api_key, proxies=proxies)
+    def __init__(self, apikey, agent="unknown", host=None, cache_dir=None):
+        super().__init__(apikey, agent=agent, host=host)
         self.cache = Cache(cache_dir, disk=VtCache, disk_compress_level=6, tag_index=True)
         self.cache_dir = cache_dir
-        self.reportBatchLimit = 4
+        self.logger = logging.getLogger('kfinny.cachedvt.CachedClient')
 
-    def _get_report(self, resource):
+    def _get(self, resource):
         data, tag = self.cache.get(resource, tag=True)
-        if data and tag != 'data':
+        if data and tag in ['sha1', 'md5']:
             data, tag = self.cache.get(data, tag=True)
+        if data and tag == 'object':
+            data = Object.from_dict(data)
         return data
 
-    def _put_report(self, report):
-        if report['response_code'] == 1:
-            sha256 = report['sha256']
-            sha1 = report['sha1']
-            md5 = report['md5']
-            self.cache.set(sha256, report, tag='data')
-            self.cache.set(sha1, sha256, tag='sha1')
-            self.cache.set(md5, sha256, tag='md5')
-        else:
-            try:
-                self.cache.set(report['resource'], report, tag='data')
-            except ValueError as e:
-                logging.warning(str(e))
+    def _put_object(self, obj):
+        self.cache.set(obj.sha256, obj.to_dict(), tag='object')
+        self.cache.set(obj.sha1, obj.sha256, tag='sha1')
+        self.cache.set(obj.md5, obj.sha256, tag='md5')
 
-    def yield_file_report(self, resource, timeout=None):
+    def _put_error(self, resource, error):
+        self.cache.set(resource, {'resource': resource, 'code': error.code, 'message': error.message}, tag='error')
+
+    def yield_file_report(self, resource):
         queryset = set()
         if isinstance(resource, str):
             resource = resource.split(',')
         if isinstance(resource, (tuple, list, set, frozenset)):
             for r in resource:
-                data = self._get_report(r)
+                data = self._get(r)
                 if data is not None:
                     yield data
                 else:
                     queryset.add(r)
         resource = sorted(queryset)
-        for i in range(0, len(resource), self.reportBatchLimit):
-            res = ','.join([str(s) for s in resource[i:i + self.reportBatchLimit]])
-            response = self.get_file_report(res, timeout=timeout)
-            if response['response_code'] == 200:
-                results = response['results']
-                if not isinstance(results, list):
-                    results = [results]
-                for data in results:
-                    self._put_report(data)
-                    yield data
-            else:
-                raise Exception("Response Error: VirusTotal returned {} for res := {}".format(
-                    response["response_code"], res))
-        logging.info("hits = {}, misses = {}".format(*self.cache.stats()))
-
-
-class CachedPrivateApi(PrivateApi, CachedPublicApi):
-
-    def __init__(self, api_key=None, proxies=None, cache_dir=None):
-        PrivateApi.__init__(self, api_key=api_key, proxies=proxies)
-        CachedPublicApi.__init__(self, api_key=api_key, proxies=proxies, cache_dir=cache_dir)
-        self.reportBatchLimit = 32
-
-    def yield_file_search_hashes(self, query, limit=1000):
-        count = 0
-        r = self.file_search(query)
-        while r['response_code'] == 200 and count < limit:
-            if r['results']['response_code'] == 0:
-                break
-            for h in r['results']['hashes']:
-                count += 1
-                if count > limit:
-                    break
-                yield h
-            if 'offset' not in r['results']:
-                break
-            if count < limit:
-                r = self.file_search(query, offset=r['results']['offset'])
-
-
-class CachedIntelApi(IntelApi, CachedPrivateApi):
-
-    def __init__(self, api_key=None, proxies=None, cache_dir=None):
-        IntelApi.__init__(self, api_key=api_key, proxies=proxies)
-        CachedPrivateApi.__init__(self, api_key=api_key, proxies=proxies, cache_dir=cache_dir)
+        for i in resource:
+            try:
+                obj = self.get_object(f'/files/{i}')
+                self._put_object(obj)
+                yield obj
+            except APIError as e:
+                self._put_error(i, e)
+        self.logger.debug("hits = {}, misses = {}".format(*self.cache.stats()))

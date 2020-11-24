@@ -1,5 +1,5 @@
-from .virustotal import CachedIntelApi, CachedPublicApi, CachedPrivateApi
+from .virustotal import CachedClient
 from .disk import VtCache
 
 
-__all__ = ["CachedIntelApi", "CachedPublicApi", "CachedPrivateApi", "VtCache"]
+__all__ = ["CachedClient", "VtCache"]
