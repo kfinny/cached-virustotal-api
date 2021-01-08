@@ -19,7 +19,7 @@ class CachedClient(Client):
             data, tag = self.cache.get(data, tag=True)
         if data and tag == 'object':
             data = Object.from_dict(data)
-        return data
+        return data, tag
 
     def _put_object(self, obj):
         self.cache.set(obj.sha256, obj.to_dict(), tag='object')
@@ -29,15 +29,16 @@ class CachedClient(Client):
     def _put_error(self, resource, error):
         self.cache.set(resource, {'resource': resource, 'code': error.code, 'message': error.message}, tag='error')
 
-    def yield_file_report(self, resource):
+    def yield_file_report(self, resource, include_notfound=False):
         queryset = set()
         if isinstance(resource, str):
             resource = resource.split(',')
         if isinstance(resource, (tuple, list, set, frozenset)):
             for r in resource:
-                data = self._get(r)
+                data, tag = self._get(r)
                 if data is not None:
-                    yield data
+                    if tag == 'object' or include_notfound:
+                        yield data
                 else:
                     queryset.add(r)
         resource = sorted(queryset)
